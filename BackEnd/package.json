@@ -1,0 +1,32 @@
+{
+  "name": "museo-inventario-backend",
+  "version": "2.0.0",
+  "description": "Backend para sistema de inventario de museo con MongoDB - Gestión de obras de arte",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "museo",
+    "inventario",
+    "obras de arte",
+    "mongodb",
+    "crud",
+    "express",
+    "rest-api",
+    "colecciones"
+  ],
+  "author": "Conservador del Museo",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "mongoose": "^9.2.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
