@@ -1,15 +1,24 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+require('dotenv').config();
 
-const { createArtworkRouter } = require("./artworkRoutes");
+// Importar modelos
+const Artwork = require('./models/Artwork');
+
+// Importar rutas
+const artworkRoutes = require('./routes/artworkRoutes');
+const authRoutes = require('./routes/authRoutes');
+const { createArtworkRouter } = require("./artworkRoutes"); // Para exportación
 
 const app = express();
 const PORT = 3000;
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 
+// Conexión a MongoDB
 const MONGODB_URI = 'mongodb://127.0.0.1:27017/museodb';
 
 mongoose.connect(MONGODB_URI)
@@ -19,25 +28,7 @@ mongoose.connect(MONGODB_URI)
     console.log('\n📌 El servidor seguirá funcionando SIN base de datos...');
   });
 
-const artworkSchema = new mongoose.Schema({
-  title: { type: String, required: true, trim: true },
-  artist: { type: String, required: true, trim: true },
-  year: { type: Number, required: true },
-  inventoryNumber: { type: String, required: true, unique: true },
-  description: { type: String, trim: true, default: "" },
-  technique: { type: String, trim: true, default: "" },
-  location: { type: String, trim: true, default: "" },
-  condition: { 
-    type: String, 
-    enum: ['Excelente', 'Bueno', 'Regular', 'En restauración', 'Dañado'],
-    default: 'Bueno'
-  },
-  createdAt: { type: Date, default: Date.now },
-  lastRevised: { type: Date, default: Date.now }
-});
-
-const Artwork = mongoose.model('Artwork', artworkSchema);
-
+// Datos de ejemplo (fallback sin MongoDB)
 const initialArtworks = [
   { 
     title: 'La noche estrellada', 
@@ -91,6 +82,7 @@ async function initializeDatabase() {
   }
 }
 
+// Ruta de prueba HTML
 app.get('/', (req, res) => {
   const mongoStatus = mongoose.connection.readyState === 1 ? '✅ Conectado' : '❌ Desconectado';
   
@@ -145,6 +137,16 @@ app.get('/', (req, res) => {
           <strong>DELETE</strong> <code>/api/artworks/:id</code> - Eliminar obra
         </div>
         
+        <h2>🔐 AUTENTICACIÓN</h2>
+        
+        <div class="endpoint">
+          <strong>POST</strong> <code>/api/auth/register</code> - Registrar nuevo usuario
+        </div>
+        
+        <div class="endpoint">
+          <strong>POST</strong> <code>/api/auth/login</code> - Iniciar sesión (recibe JWT)
+        </div>
+        
         <h2>📤 EXPORTACIÓN</h2>
         
         <div class="endpoint">
@@ -161,200 +163,19 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.get('/api/artworks', async (req, res) => {
-  try {
-    if (mongoose.connection.readyState !== 1) {
-      return res.json(initialArtworks);
-    }
-    
-    const artworks = await Artwork.find().sort({ createdAt: -1 });
-    res.json(artworks);
-  } catch (error) {
-    console.error('Error al obtener obras:', error);
-    res.json(initialArtworks);
-  }
-});
+// Rutas de la API
+app.use('/api/auth', authRoutes);
+app.use('/api/artworks', artworkRoutes);
+app.use("/api/artworks", createArtworkRouter(Artwork)); // Para exportación
 
-app.get('/api/artworks/:id', async (req, res) => {
-  try {
-    if (mongoose.connection.readyState !== 1) {
-      const artwork = initialArtworks.find(a => a._id === req.params.id);
-      return artwork ? res.json(artwork) : res.status(404).json({ error: 'Obra no encontrada' });
-    }
-    
-    const artwork = await Artwork.findById(req.params.id);
-    if (!artwork) {
-      return res.status(404).json({ error: 'Obra no encontrada' });
-    }
-    res.json(artwork);
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener la obra' });
-  }
-});
-
-app.post('/api/artworks', async (req, res) => {
-  try {
-    const { title, artist, year, description, technique, location, inventoryNumber, condition } = req.body;
-    
-    if (!title || !artist || !year || !inventoryNumber) {
-      return res.status(400).json({ 
-        error: 'Los campos obligatorios son: título, artista, año y número de inventario'
-      });
-    }
-    
-    if (isNaN(year) || year < -3000 || year > new Date().getFullYear()) {
-      return res.status(400).json({ error: 'Año no válido' });
-    }
-    
-    if (mongoose.connection.readyState !== 1) {
-      if (initialArtworks.some(a => a.inventoryNumber === inventoryNumber)) {
-        return res.status(400).json({ error: 'Ya existe una obra con ese número de inventario' });
-      }
-      
-      const newArtwork = {
-        _id: Date.now().toString(),
-        title,
-        artist,
-        year: parseInt(year),
-        description: description || "",
-        technique: technique || "",
-        location: location || "",
-        inventoryNumber,
-        condition: condition || 'Bueno',
-        createdAt: new Date(),
-        lastRevised: new Date()
-      };
-      initialArtworks.push(newArtwork);
-      return res.status(201).json(newArtwork);
-    }
-    
-    const existingArtwork = await Artwork.findOne({ inventoryNumber });
-    if (existingArtwork) {
-      return res.status(400).json({ error: 'Ya existe una obra con ese número de inventario' });
-    }
-    
-    const newArtwork = new Artwork({ 
-      title, 
-      artist, 
-      year: parseInt(year),
-      description: description || "",
-      technique: technique || "",
-      location: location || "",
-      inventoryNumber,
-      condition: condition || 'Bueno'
-    });
-    
-    const savedArtwork = await newArtwork.save();
-    res.status(201).json(savedArtwork);
-  } catch (error) {
-    console.error('Error al crear obra:', error);
-    res.status(500).json({ error: 'Error al agregar la obra al inventario' });
-  }
-});
-
-app.put('/api/artworks/:id', async (req, res) => {
-  try {
-    const { title, artist, year, description, technique, location, inventoryNumber, condition } = req.body;
-    
-    if (year && (isNaN(year) || year < -3000 || year > new Date().getFullYear())) {
-      return res.status(400).json({ error: 'Año no válido' });
-    }
-    
-    if (mongoose.connection.readyState !== 1) {
-      const artworkIndex = initialArtworks.findIndex(a => a._id === req.params.id);
-      if (artworkIndex === -1) {
-        return res.status(404).json({ error: 'Obra no encontrada' });
-      }
-      
-      if (inventoryNumber && inventoryNumber !== initialArtworks[artworkIndex].inventoryNumber) {
-        if (initialArtworks.some(a => a.inventoryNumber === inventoryNumber)) {
-          return res.status(400).json({ error: 'Ya existe una obra con ese número de inventario' });
-        }
-      }
-      
-      initialArtworks[artworkIndex] = { 
-        ...initialArtworks[artworkIndex], 
-        title: title || initialArtworks[artworkIndex].title,
-        artist: artist || initialArtworks[artworkIndex].artist,
-        year: year ? parseInt(year) : initialArtworks[artworkIndex].year,
-        description: description !== undefined ? description : initialArtworks[artworkIndex].description,
-        technique: technique !== undefined ? technique : initialArtworks[artworkIndex].technique,
-        location: location !== undefined ? location : initialArtworks[artworkIndex].location,
-        inventoryNumber: inventoryNumber || initialArtworks[artworkIndex].inventoryNumber,
-        condition: condition || initialArtworks[artworkIndex].condition,
-        lastRevised: new Date()
-      };
-      return res.json(initialArtworks[artworkIndex]);
-    }
-    
-    if (inventoryNumber) {
-      const existingArtwork = await Artwork.findOne({ 
-        inventoryNumber, 
-        _id: { $ne: req.params.id } 
-      });
-      if (existingArtwork) {
-        return res.status(400).json({ error: 'Ya existe una obra con ese número de inventario' });
-      }
-    }
-    
-    const updatedArtwork = await Artwork.findByIdAndUpdate(
-      req.params.id,
-      { 
-        title, 
-        artist, 
-        year: year ? parseInt(year) : undefined,
-        description,
-        technique,
-        location,
-        inventoryNumber,
-        condition,
-        lastRevised: new Date()
-      },
-      { new: true, runValidators: true }
-    );
-    
-    if (!updatedArtwork) {
-      return res.status(404).json({ error: 'Obra no encontrada' });
-    }
-    
-    res.json(updatedArtwork);
-  } catch (error) {
-    console.error('Error al actualizar obra:', error);
-    res.status(500).json({ error: 'Error al actualizar la obra' });
-  }
-});
-
-app.delete('/api/artworks/:id', async (req, res) => {
-  try {
-    if (mongoose.connection.readyState !== 1) {
-      const artworkIndex = initialArtworks.findIndex(a => a._id === req.params.id);
-      if (artworkIndex === -1) {
-        return res.status(404).json({ error: 'Obra no encontrada' });
-      }
-      initialArtworks.splice(artworkIndex, 1);
-      return res.json({ message: 'Obra eliminada correctamente' });
-    }
-    
-    const deletedArtwork = await Artwork.findByIdAndDelete(req.params.id);
-    
-    if (!deletedArtwork) {
-      return res.status(404).json({ error: 'Obra no encontrada' });
-    }
-    
-    res.json({ message: 'Obra eliminada correctamente' });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al eliminar la obra' });
-  }
-});
-
-app.use("/api/artworks", createArtworkRouter(Artwork));
-
+// Iniciar servidor
 app.listen(PORT, async () => {
   console.log('\n' + '='.repeat(50));
   console.log('🏛️  MUSEO DE ARTE - SISTEMA DE INVENTARIO');
   console.log('='.repeat(50));
   console.log(`🚀 Servidor: http://localhost:${PORT}`);
   console.log(`📡 API: http://localhost:${PORT}/api/artworks`);
+  console.log(`🔐 Auth: http://localhost:${PORT}/api/auth`);
   console.log('='.repeat(50));
   
   await initializeDatabase();

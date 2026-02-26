@@ -1,11 +1,13 @@
 const express = require("express");
 const fs = require("fs").promises;
 const path = require("path");
+const { protect, authorize } = require('./middleware/auth'); // ← AGREGAR ESTA LÍNEA
 
 function createArtworkRouter(ArtworkModel) {
     const router = express.Router();
 
-    router.post("/export", async (req, res) => {
+    // Proteger ruta de exportación (solo admin)
+    router.post("/export", protect, authorize('admin'), async (req, res) => { // ← MODIFICAR ESTA LÍNEA
         try {
             console.log('📤 Iniciando exportación del inventario del museo...');
             
@@ -96,7 +98,8 @@ function createArtworkRouter(ArtworkModel) {
         }
     });
 
-    router.get("/export/download", async (req, res) => {
+    // Proteger ruta de descarga (solo admin)
+    router.get("/export/download", protect, authorize('admin'), async (req, res) => { // ← MODIFICAR ESTA LÍNEA
         try {
             const EXPORT_PATH = path.join(process.cwd(), "museum_inventory_backup.json");
             

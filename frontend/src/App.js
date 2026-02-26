@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
+import { useAuth } from './context/AuthContext';
+import Login from './components/Login';
+import Register from './components/Register';
+import Navbar from './components/Navbar';
+import api from './services/api';
 import './App.css';
-
-const API_URL = "http://localhost:3000/api/artworks";
 
 const CONDITION_OPTIONS = [
   'Excelente',
@@ -12,6 +15,9 @@ const CONDITION_OPTIONS = [
 ];
 
 function App() {
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
+  const [view, setView] = useState('login'); // 'login', 'register', 'artworks'
+  
   const [artworks, setArtworks] = useState([]);
   
   const [title, setTitle] = useState("");
@@ -30,15 +36,17 @@ function App() {
   const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
-    loadArtworks();
-  }, []);
+    if (isAuthenticated()) {
+      loadArtworks();
+      setView('artworks');
+    }
+  }, [isAuthenticated]);
 
   async function loadArtworks() {
     setLoading(true);
     try {
-      const response = await fetch(API_URL);
-      const data = await response.json();
-      setArtworks(data);
+      const response = await api.get('/artworks');
+      setArtworks(response.data);
     } catch (error) {
       console.error(error);
     } finally {
@@ -80,18 +88,10 @@ function App() {
 
     try {
       if (editingArtwork) {
-        await fetch(`${API_URL}/${editingArtwork._id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(artworkData),
-        });
+        await api.put(`/artworks/${editingArtwork._id}`, artworkData);
         setEditingArtwork(null);
       } else {
-        await fetch(API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(artworkData),
-        });
+        await api.post('/artworks', artworkData);
       }
 
       setTitle("");
@@ -107,7 +107,7 @@ function App() {
       
     } catch (error) {
       console.error(error);
-      window.alert("Error al guardar la obra");
+      window.alert(error.response?.data?.error || "Error al guardar la obra");
     }
   }
 
@@ -115,11 +115,11 @@ function App() {
     if (!window.confirm(`¿Eliminar la obra "${title}"?`)) return;
 
     try {
-      await fetch(`${API_URL}/${id}`, { method: "DELETE" });
+      await api.delete(`/artworks/${id}`);
       await loadArtworks();
     } catch (error) {
       console.error(error);
-      window.alert("Error al eliminar la obra");
+      window.alert(error.response?.data?.error || "Error al eliminar la obra");
     }
   }
 
@@ -164,11 +164,47 @@ function App() {
     return true;
   });
 
+  // Mostrar pantalla de carga mientras verifica autenticación
+  if (authLoading) {
+    return (
+      <div className="app-container">
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Cargando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Si no está autenticado, mostrar login/register
+  if (!isAuthenticated()) {
+    return (
+      <div className="app-container">
+        <Navbar view={view} setView={setView} />
+        {view === 'login' ? (
+          <Login onSuccess={() => {
+            loadArtworks();
+            setView('artworks');
+          }} />
+        ) : (
+          <Register onSuccess={() => setView('login')} />
+        )}
+      </div>
+    );
+  }
+
+  // Usuario autenticado - mostrar inventario
   return (
     <div className="app-container">
+      <Navbar 
+        view={view} 
+        setView={setView} 
+        user={user}
+      />
+
       <div className="header">
         <h1>🏛️ SISTEMA DE INVENTARIO DEL MUSEO</h1>
-        <p>Gestión de Colecciones - Obras de Arte</p>
+        <p>Bienvenido, {user?.email} ({user?.role})</p>
       </div>
 
       <div className="toolbar">
@@ -225,99 +261,103 @@ function App() {
         )}
       </div>
 
-      <div className={`form-section ${editingArtwork ? 'edit-mode' : ''}`}>
-        <h3 className="form-title">
-          {editingArtwork ? "✏️ EDITAR OBRA" : "➕ AGREGAR NUEVA OBRA"}
-        </h3>
+      {/* Solo mostrar formulario si es admin o editor */}
+      {(user?.role === 'admin' || user?.role === 'editor') && (
+        <div className={`form-section ${editingArtwork ? 'edit-mode' : ''}`}>
+          <h3 className="form-title">
+            {editingArtwork ? "✏️ EDITAR OBRA" : "➕ AGREGAR NUEVA OBRA"}
+          </h3>
 
-        <form onSubmit={handleSubmit}>
-          <div className="form-grid">
-            <input
-              className="form-input"
-              type="text"
-              placeholder="Título *"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-            />
+          <form onSubmit={handleSubmit}>
+            <div className="form-grid">
+              <input
+                className="form-input"
+                type="text"
+                placeholder="Título *"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+              />
 
-            <input
-              className="form-input"
-              type="text"
-              placeholder="Artista *"
-              value={artist}
-              onChange={(e) => setArtist(e.target.value)}
-              required
-            />
+              <input
+                className="form-input"
+                type="text"
+                placeholder="Artista *"
+                value={artist}
+                onChange={(e) => setArtist(e.target.value)}
+                required
+              />
 
-            <input
-              className="form-input"
-              type="number"
-              placeholder="Año *"
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
-              required
-            />
+              <input
+                className="form-input"
+                type="number"
+                placeholder="Año *"
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+                required
+              />
 
-            <input
-              className="form-input"
-              type="text"
-              placeholder="Nº Inventario *"
-              value={inventoryNumber}
-              onChange={(e) => setInventoryNumber(e.target.value)}
-              required
-              disabled={editingArtwork}
-            />
+              <input
+                className="form-input"
+                type="text"
+                placeholder="Nº Inventario *"
+                value={inventoryNumber}
+                onChange={(e) => setInventoryNumber(e.target.value)}
+                required
+                disabled={editingArtwork}
+              />
 
-            <input
-              className="form-input"
-              type="text"
-              placeholder="Técnica"
-              value={technique}
-              onChange={(e) => setTechnique(e.target.value)}
-            />
+              <input
+                className="form-input"
+                type="text"
+                placeholder="Técnica"
+                value={technique}
+                onChange={(e) => setTechnique(e.target.value)}
+              />
 
-            <input
-              className="form-input"
-              type="text"
-              placeholder="Ubicación"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-            />
+              <input
+                className="form-input"
+                type="text"
+                placeholder="Ubicación"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+              />
 
-            <select
-              className="form-input"
-              value={condition}
-              onChange={(e) => setCondition(e.target.value)}
-            >
-              {CONDITION_OPTIONS.map(cond => (
-                <option key={cond} value={cond}>{cond}</option>
-              ))}
-            </select>
+              <select
+                className="form-input"
+                value={condition}
+                onChange={(e) => setCondition(e.target.value)}
+              >
+                {CONDITION_OPTIONS.map(cond => (
+                  <option key={cond} value={cond}>{cond}</option>
+                ))}
+              </select>
 
-            <textarea
-              className="form-textarea"
-              placeholder="Descripción"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows="3"
-            />
-          </div>
+              <textarea
+                className="form-textarea"
+                placeholder="Descripción"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows="3"
+              />
+            </div>
 
-          <div className="form-buttons">
-            <button className="btn-submit" type="submit">
-              {editingArtwork ? "✏️ Actualizar Obra" : "➕ Agregar al Inventario"}
-            </button>
-            
-            {editingArtwork && (
-              <button className="btn-cancel" type="button" onClick={resetForm}>
-                ❌ Cancelar
+            <div className="form-buttons">
+              <button className="btn-submit" type="submit">
+                {editingArtwork ? "✏️ Actualizar Obra" : "➕ Agregar al Inventario"}
               </button>
-            )}
-          </div>
-        </form>
-      </div>
+              
+              {editingArtwork && (
+                <button className="btn-cancel" type="button" onClick={resetForm}>
+                  ❌ Cancelar
+                </button>
+              )}
+            </div>
+          </form>
+        </div>
+      )}
 
+      {/* Estadísticas - visibles para todos */}
       <div className="stats-grid">
         <div className="stat-card">
           <span className="stat-number">{artworks.length}</span>
@@ -389,14 +429,20 @@ function App() {
                   </div>
                 </div>
 
-                <div className="artwork-actions">
-                  <button className="btn-edit" onClick={() => handleEdit(artwork)}>
-                    ✏️ Editar
-                  </button>
-                  <button className="btn-delete" onClick={() => handleDelete(artwork._id, artwork.title)}>
-                    🗑️ Eliminar
-                  </button>
-                </div>
+                {/* Solo mostrar botones de acción si es admin o editor */}
+                {(user?.role === 'admin' || user?.role === 'editor') && (
+                  <div className="artwork-actions">
+                    <button className="btn-edit" onClick={() => handleEdit(artwork)}>
+                      ✏️ Editar
+                    </button>
+                    {/* Solo admin puede eliminar */}
+                    {user?.role === 'admin' && (
+                      <button className="btn-delete" onClick={() => handleDelete(artwork._id, artwork.title)}>
+                        🗑️ Eliminar
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -406,7 +452,7 @@ function App() {
       <div className="footer">
         <p>🏛️ Museo de Arte - Sistema de Gestión de Inventario</p>
         <div className="footer-info">
-          <span>🔗 {API_URL}</span>
+          <span>🔗 Usuario: {user?.email} | Rol: {user?.role}</span>
           <span>📊 {new Date().toLocaleString('es-ES')}</span>
         </div>
       </div>
